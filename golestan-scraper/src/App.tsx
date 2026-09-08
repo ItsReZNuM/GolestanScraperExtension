@@ -1,6 +1,4 @@
-'use client';
-
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   AVAILABLE_FIELDS,
   CourseData,
@@ -8,8 +6,8 @@ import {
   FieldOption,
   GROUP_OPTIONS,
   GroupKey,
-} from '@/types/course';
-import { generatePrintablePDF } from '@/utils/pdfGenerator';
+} from './types/course';
+import { generatePrintablePDF } from './utils/pdfGenerator';
 import {
   AlertTriangle,
   CheckSquare,
@@ -21,21 +19,27 @@ import {
   SearchCheck,
 } from 'lucide-react';
 
-// Chrome extension global (only present inside the popup).
+// Chrome extension API — only available inside extension popup.
 declare const chrome: {
   tabs: {
     query: (info: object) => Promise<Array<{ id?: number; url?: string }>>;
     sendMessage: (
       tabId: number,
       msg: object,
-      cb: (response?: unknown) => void
+      cb?: (response?: unknown) => void
     ) => void;
   };
-  scripting?: {
-    executeScript: (opts: unknown) => Promise<unknown>;
+  scripting: {
+    executeScript: (opts: {
+      target: { tabId: number; allFrames?: boolean };
+      func?: (...args: unknown[]) => unknown;
+      args?: unknown[];
+      files?: string[];
+    }) => Promise<Array<{ result?: unknown }>>;
   };
   runtime: {
     lastError?: { message?: string };
+    getURL: (path: string) => string;
     onMessage?: {
       addListener: (fn: (msg: unknown) => void) => void;
       removeListener: (fn: (msg: unknown) => void) => void;
@@ -56,7 +60,6 @@ function TelegramIcon() {
     </svg>
   );
 }
-
 function InstagramIcon() {
   return (
     <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24" aria-hidden>
@@ -64,53 +67,46 @@ function InstagramIcon() {
     </svg>
   );
 }
-
 function GithubIcon() {
   return (
     <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24" aria-hidden>
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
-      />
+      <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
     </svg>
   );
 }
 
-export default function PopupPage() {
+export default function App() {
   const [courses, setCourses] = useState<CourseData[]>([]);
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
   const [probe, setProbe] = useState<GolestanProbe>({ status: 'checking' });
 
-  // Columns the user ticked for the PDF output.
   const [selectedFields, setSelectedFields] = useState<CourseFieldKey[]>(
     AVAILABLE_FIELDS.filter((f: FieldOption) => f.defaultSelected).map(
       (f: FieldOption) => f.key
     )
   );
 
-  // Live filters applied before preview + export.
   const [genderFilter, setGenderFilter] = useState('ALL');
   const [instructorFilter, setInstructorFilter] = useState('');
   const [courseNameFilter, setCourseNameFilter] = useState('');
 
-  // Group-by axes for the PDF (combinable: gender / instructor / course).
   const [groupKeys, setGroupKeys] = useState<GroupKey[]>(['instructor']);
 
-  const getExt = () =>
-    (typeof chrome !== 'undefined' ? (chrome as unknown as typeof chrome) : undefined);
+  const getExt = useCallback(() => {
+    if (typeof chrome === 'undefined' || !chrome.tabs) return null;
+    return chrome as typeof chrome;
+  }, []);
 
-  const runProbe = async () => {
+  // Probe: use scripting.executeScript with allFrames:true to check every frame
+  const runProbe = useCallback(async () => {
     setProbe({ status: 'checking' });
     const ext = getExt();
-    if (!ext?.tabs?.query || !ext?.tabs?.sendMessage) {
-      setProbe({
-        status: 'unknown',
-        reason: 'پاپ‌آپ بیرون از محیط اکستنشن باز شده (حالت پیش‌نمایش وب).',
-      });
+    if (!ext) {
+      setProbe({ status: 'unknown', reason: 'پاپ‌آپ بیرون از محیط اکستنشن باز شده.' });
       return;
     }
+
     try {
       const tabs = await ext.tabs.query({ active: true, currentWindow: true });
       const tab = tabs?.[0];
@@ -118,189 +114,191 @@ export default function PopupPage() {
         setProbe({ status: 'unknown', reason: 'تب فعالی یافت نشد.' });
         return;
       }
-      const href = tab.url ?? '';
-      // Send CHECK_GOLESTAN to the page; handle both promise + callback styles.
-      const resp: unknown = await new Promise((resolve) => {
-        let done = false;
-        const timer = setTimeout(() => {
-          if (!done) resolve(null);
-        }, 1200);
-        try {
-          ext.tabs.sendMessage(tab.id!, { action: 'CHECK_GOLESTAN' }, (r) => {
-            done = true;
-            clearTimeout(timer);
-            // Must read lastError to prevent unchecked error
-            void ext.runtime?.lastError;
-            resolve(r);
-          });
-        } catch {
-          clearTimeout(timer);
-          resolve(null);
-        }
+
+      // Step 1: inject injected.js into all frames (makes checkFrameForTable global)
+      await ext.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        files: ['injected.js'],
       });
-      const typed = resp as null | { found?: boolean; count?: number; href?: string };
-      if (!typed || typeof typed.found !== 'boolean') {
-        // No content-script response → try to inject and re-probe once
-        if (ext.scripting?.executeScript) {
-          try {
-            await ext.scripting.executeScript({
-              target: { tabId: tab.id! },
-              files: ['content.js'],
-            });
-            const retry: unknown = await new Promise((resolve) => {
-              let done = false;
-              const t2 = setTimeout(() => {
-                if (!done) resolve(null);
-              }, 1200);
-              try {
-                ext.tabs.sendMessage(tab.id!, { action: 'CHECK_GOLESTAN' }, (r2) => {
-                  done = true;
-                  clearTimeout(t2);
-                  void ext.runtime?.lastError;
-                  resolve(r2);
-                });
-              } catch {
-                clearTimeout(t2);
-                resolve(null);
-              }
-            });
-            const r2 = retry as null | { found?: boolean; count?: number; href?: string };
-            if (r2?.found) {
-              setProbe({ status: 'found', count: r2.count ?? 0, href: r2.href ?? href });
-              return;
-            }
-          } catch {
-            // fall through to not-found
-          }
-        }
-        setProbe({ status: 'not-found', href });
-        return;
-      }
-      if (typed.found) {
-        setProbe({ status: 'found', count: typed.count ?? 0, href: typed.href ?? href });
-      } else {
-        setProbe({ status: 'not-found', href: typed.href ?? href });
-      }
-    } catch {
-      setProbe({ status: 'unknown', reason: 'خطای غیرمنتظره در بررسی تب.' });
-    }
-  };
+      // Step 2: call the global in each frame
+      const results = await ext.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: () => {
+          // eslint-disable-next-line no-undef
+          return (checkFrameForTable as () => { found: boolean; count: number; frameUrl: string })();
+        },
+      });
 
-  // Initial probe + live PROGRESS listener
-  useEffect(() => {
-    // probe on popup open
-    runProbe();
-    const ext = getExt();
-    const handler = (msg: unknown) => {
-      const m = msg as { action?: string; message?: string };
-      if (m?.action === 'PROGRESS' && m.message) setStatusText(m.message);
-    };
-    try {
-      ext?.runtime?.onMessage?.addListener(handler as never);
-    } catch {
-      // ignore (not in extension context)
-    }
-    return () => {
-      try {
-        ext?.runtime?.onMessage?.removeListener(handler as never);
-      } catch {
-        // ignore
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Ask the content-script to walk all Golestan pages and return rows.
-  const handleStartScrape = async () => {
-    setLoading(true);
-    setStatusText('در حال اتصال به صفحه گلستان...');
-
-    const ext = getExt();
-    if (!ext?.tabs?.query || !ext?.tabs?.sendMessage) {
-      setStatusText(
-        'افزونه باید داخل مرورگر (روی صفحه گلستان) اجرا شود. این صفحه در حالت وب معمولی باز است.'
+      // Find the frame that has the table
+      const found = (results || []).find(
+        (r) => r.result && (r.result as { found: boolean }).found === true
       );
+
+      if (found && found.result) {
+        const res = found.result as { found: boolean; count: number; frameUrl: string };
+        setProbe({ status: 'found', count: res.count, href: res.frameUrl });
+      } else {
+        setProbe({ status: 'not-found', href: tab.url || '' });
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'خطا';
+      setProbe({ status: 'unknown', reason: msg });
+    }
+  }, [getExt]);
+
+  // Start scraping — orchestrate multi-page walk from the popup
+  const handleStartScrape = useCallback(async () => {
+    setLoading(true);
+    setStatusText('در حال اتصال...');
+
+    const ext = getExt();
+    if (!ext) {
+      setStatusText('افزونه باید داخل مرورگر اجرا شود.');
       setLoading(false);
       return;
     }
-
-    const trySend = (tabId: number, onDone: (ok: boolean) => void) => {
-      try {
-        ext.tabs.sendMessage(
-          tabId,
-          { action: 'START_SCRAPING' },
-          (response: unknown) => {
-            const err = ext.runtime?.lastError;
-            if (err) {
-              onDone(false);
-              return;
-            }
-            const r = response as { status?: string; data?: CourseData[]; message?: string } | undefined;
-            if (r?.status === 'SUCCESS') {
-              setCourses(r.data ?? []);
-              setStatusText(`تعداد ${(r.data ?? []).length} ردیف با موفقیت استخراج شد.`);
-            } else {
-              setStatusText(r?.message || 'خطایی در استخراج رخ داد.');
-            }
-            setLoading(false);
-            onDone(true);
-          }
-        );
-      } catch {
-        onDone(false);
-      }
-    };
 
     try {
       const tabs = await ext.tabs.query({ active: true, currentWindow: true });
       const tab = tabs?.[0];
       if (!tab?.id) {
-        setStatusText('تب جاری یافت نشد.');
+        setStatusText('تب یافت نشد.');
         setLoading(false);
         return;
       }
 
-      let responded = false;
-      trySend(tab.id, (ok) => {
-        responded = ok;
-      });
+      const target = { tabId: tab.id, allFrames: true };
 
-      setTimeout(async () => {
-        if (responded) return;
-        void ext.runtime?.lastError;
-        if (ext.scripting?.executeScript) {
-          try {
-            await ext.scripting.executeScript({
-              target: { tabId: tab.id },
-              files: ['content.js'],
-            });
-            setStatusText('اسکریپت تزریق شد، تلاش مجدد...');
-            trySend(tab.id!, (ok2) => {
-              if (!ok2) {
-                setStatusText(
-                  'ارتباط با صفحه برقرار نشد؛ صفحه گلستان را رفرش کنید و دوباره تلاش کنید.'
-                );
-                setLoading(false);
-              }
-            });
-          } catch {
-            setStatusText(
-              'ارتباط با صفحه برقرار نشد؛ صفحه گلستان را رفرش کنید و دوباره تلاش کنید.'
-            );
-            setLoading(false);
-          }
-        } else {
-          setStatusText(
-            'ارتباط با صفحه برقرار نشد؛ صفحه گلستان را رفرش کنید و دوباره تلاش کنید.'
-          );
-          setLoading(false);
+      // Helper: inject injected.js + small delay
+      async function inject() {
+        await ext.scripting.executeScript({ target, files: ['injected.js'] });
+        await new Promise((r) => setTimeout(r, 150));
+      }
+
+      // Helper: run a function in all frames, return first non-null result
+      async function runInFrames<T>(fn: () => T): Promise<T | undefined> {
+        const results = await ext.scripting.executeScript({ target, func: fn });
+        for (const r of results || []) {
+          const v = r.result;
+          if (v != null && v !== false && v !== 0 && v !== '') return v as T;
         }
-      }, 900);
-    } catch {
-      setStatusText('خطای غیرمنتظره در ارسال دستور.');
-      setLoading(false);
+        return undefined;
+      }
+
+      // Helper: inject + run in one step
+      async function injectAndRun<T>(fn: () => T): Promise<T | undefined> {
+        await inject();
+        return runInFrames(fn);
+      }
+
+      // Step 1: Try go to first page (retry up to 3 times)
+      setStatusText('رفتن به صفحه اول...');
+      let firstPageOk = false;
+      for (let attempt = 0; attempt < 3 && !firstPageOk; attempt++) {
+        await inject();
+        const clicked = await runInFrames<boolean>(() => {
+          // eslint-disable-next-line no-undef
+          return (clickNavButton as (t: string[]) => boolean)([
+            'اولين صفحه', 'اولین صفحه', 'صفحه اول',
+            'اول', 'First', 'first', '|<'
+          ]);
+        });
+        if (clicked) {
+          await new Promise((r) => setTimeout(r, 2500));
+          await inject();
+          const verify = await runInFrames<number>(() => {
+            // eslint-disable-next-line no-undef
+            const d = (checkFrameForTable as () => { count: number })();
+            return d ? d.count : 0;
+          });
+          if (verify && verify > 0) {
+            firstPageOk = true;
+          }
+        }
+        if (!firstPageOk && attempt < 2) {
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+
+      const allCourses: CourseData[] = [];
+      const seenSignatures = new Set<string>();
+      let page = 1;
+      const MAX_PAGES = 500;
+
+      while (page <= MAX_PAGES) {
+        setStatusText(`در حال پردازش صفحه ${page}...`);
+
+        // Inject fresh before extraction
+        await inject();
+
+        // Extract current page data
+        const rows = await runInFrames<CourseData[]>(() => {
+          // eslint-disable-next-line no-undef
+          return (scrapeCurrentPage as () => CourseData[])();
+        });
+
+        if (!rows || rows.length === 0) break;
+
+        // Deduplicate by codeGroup signature
+        const sig = rows.map((c) => c.codeGroup).join('|');
+        if (seenSignatures.has(sig)) break;
+        seenSignatures.add(sig);
+
+        for (const r of rows) allCourses.push(r);
+
+        // Get table fingerprint before clicking next
+        const prevFP = await runInFrames<string>(() => {
+          // eslint-disable-next-line no-undef
+          return (getTableFingerprint as () => string)();
+        });
+
+        // Try click next page
+        await inject();
+        const clicked = await runInFrames<boolean>(() => {
+          // eslint-disable-next-line no-undef
+          return (clickNavButton as (t: string[]) => boolean)(['صفحه بعد', 'بعدی']);
+        });
+
+        if (!clicked) break; // No next button → last page
+
+        // Wait for table content to change (poll up to 10s)
+        let changed = false;
+        for (let attempt = 0; attempt < 25; attempt++) {
+          await new Promise((r) => setTimeout(r, 400));
+          await inject();
+          const newFP = await runInFrames<string>(() => {
+            // eslint-disable-next-line no-undef
+            return (getTableFingerprint as () => string)();
+          });
+          if (newFP && newFP !== prevFP) {
+            changed = true;
+            break;
+          }
+        }
+
+        if (!changed) break; // Table didn't change → last page
+
+        page++;
+      }
+
+      if (allCourses.length > 0) {
+        setCourses(allCourses);
+        setStatusText(`تعداد ${allCourses.length} ردیف از ${page} صفحه با موفقیت استخراج شد.`);
+      } else {
+        setStatusText('داده‌ای یافت نشد. مطمئن شوید صفحه «دروس ارائه شده در ترم» باز است.');
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'خطای ناشناخته';
+      setStatusText('خطا: ' + msg);
     }
-  };
+
+    setLoading(false);
+  }, [getExt]);
+
+  // Probe on mount
+  useEffect(() => {
+    runProbe();
+  }, [runProbe]);
 
   const toggleField = (key: CourseFieldKey) => {
     setSelectedFields((prev) =>
@@ -333,11 +331,19 @@ export default function PopupPage() {
     [courses, genderFilter, instructorFilter, courseNameFilter]
   );
 
-  const handleExportPDF = () => {
-    const fieldsToExport = AVAILABLE_FIELDS.filter((f: FieldOption) =>
-      selectedFields.includes(f.key)
-    );
-    generatePrintablePDF(filteredCourses, fieldsToExport, groupKeys);
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  const handleExportPDF = async () => {
+    setPdfLoading(true);
+    try {
+      const fieldsToExport = AVAILABLE_FIELDS.filter((f: FieldOption) =>
+        selectedFields.includes(f.key)
+      );
+      await generatePrintablePDF(filteredCourses, fieldsToExport, groupKeys);
+    } catch (_e) {
+      void _e;
+    }
+    setPdfLoading(false);
   };
 
   const isGate = probe.status !== 'found';
@@ -349,7 +355,7 @@ export default function PopupPage() {
       <div className="bg-orb w-64 h-64 bg-cyan-500/20 top-40 -right-20" />
 
       <div className="relative z-10 space-y-3.5 max-w-2xl mx-auto">
-        {/* Header — always visible */}
+        {/* Header */}
         <header className="glass-panel p-3.5 rounded-2xl flex items-center justify-between animate-rise">
           <div>
             <h1 className="text-base font-bold bg-gradient-to-r from-indigo-300 via-sky-200 to-teal-100 bg-clip-text text-transparent">
@@ -363,16 +369,12 @@ export default function PopupPage() {
             title={isGate ? 'اول باید وارد صفحه گلستان شوید' : undefined}
             className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 active:scale-95 transition-all shadow-lg shadow-indigo-500/25 disabled:opacity-40 disabled:pointer-events-none text-white"
           >
-            {loading ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Play className="w-3.5 h-3.5 fill-current" />
-            )}
+            {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
             {loading ? 'در حال دریافت...' : 'شروع استخراج'}
           </button>
         </header>
 
-        {/* Gate: loading / not-found / unknown */}
+        {/* Gate */}
         <div className="glass-panel rounded-2xl p-3 animate-rise">
           <div className="flex items-center gap-2 text-xs font-semibold">
             {gateChecking ? (
@@ -386,10 +388,12 @@ export default function PopupPage() {
               {gateChecking
                 ? 'در حال بررسی صفحه فعلی...'
                 : probe.status === 'found'
-                  ? `صفحه گلستان شناسایی شد — ${probe.count} ردیف در این صفحه`
+                  ? `گلستان شناسایی شد — ${probe.count} ردیف`
                   : probe.status === 'not-found'
-                    ? 'سامانه گلستان شناسایی نشد'
-                    : 'وضعیت تب نامشخص'}
+                    ? 'جدول دروس یافت نشد'
+                    : probe.status === 'unknown'
+                      ? probe.reason
+                      : 'وضعیت نامشخص'}
             </span>
             <button
               onClick={runProbe}
@@ -410,23 +414,18 @@ export default function PopupPage() {
           {probe.status === 'not-found' && (
             <div className="mt-2 space-y-1.5 text-[11px] leading-5 text-slate-300">
               <p>
-                اکستنشن فقط روی صفحه <b className="text-white">«دروس ارائه شده در ترم»</b> داخل
-                سامانه گلستان کار می‌کند (همان صفحه‌ای که جدول شماره و گروه درس دارد).
+                اکستنشن فقط روی صفحه <b className="text-white">«دروس ارائه شده در ترم»</b> کار
+                می‌کند (صفحه‌ای که جدول شماره و گروه درس دارد).
               </p>
               <ol className="list-decimal ps-4 space-y-0.5 text-slate-400">
-                <li>وارد سامانه گلستان شوید و به تب «دروس ارائه شده در ترم و شرایط اخذ آن» بروید.</li>
-                <li>صبر کنید جدول کامل لود شود، سپس این پاپ‌آپ را باز و «بررسی مجدد» بزنید.</li>
-                <li>اگر هنوز نشد: صفحه گلستان را رفرش کنید و افزونه را Reload کنید (chrome://extensions).</li>
+                <li>وارد گلستان شوید → تب «دروس ارائه شده در ترم و شرایط اخذ آن».</li>
+                <li>صبر کنید جدول کامل لود شود.</li>
+                <li>این پاپ‌آپ را باز کنید → «بررسی مجدد» بزنید.</li>
+                <li>اگر نشد: صفحه را F5 و افزونه را Reload کنید.</li>
               </ol>
-              <p className="text-[10px] text-slate-500 break-all">آدرس فعلی تب: {probe.href || '—'}</p>
             </div>
           )}
-          {probe.status === 'unknown' && (
-            <p className="mt-2 text-[11px] leading-5 text-amber-200/90">
-              {probe.reason} اگر این پیام را داخل کروم (روی گلستان) می‌بینی، صفحه را رفرش و «بررسی
-              مجدد» بزن.
-            </p>
-          )}
+
           {probe.status === 'found' && (
             <p className="mt-1.5 text-[10px] text-slate-500 break-all">آدرس: {probe.href}</p>
           )}
@@ -438,14 +437,14 @@ export default function PopupPage() {
           </div>
         )}
 
-        {/* Everything below is hidden until Golestan is detected — this is the "gate" the user asked for */}
+        {/* Menu — only when found */}
         {probe.status === 'found' ? (
           <>
             {/* Column picker */}
             <section className="glass-panel p-3 rounded-2xl space-y-2 animate-rise">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
                 <CheckSquare className="w-3.5 h-3.5 text-indigo-300" />
-                <span>ستون‌های خروجی (همه فیلدهای جدول گلستان):</span>
+                <span>ستون‌های خروجی:</span>
               </div>
               <div className="grid grid-cols-3 gap-1.5">
                 {AVAILABLE_FIELDS.map((field: FieldOption) => {
@@ -482,7 +481,7 @@ export default function PopupPage() {
             <section className="glass-panel p-3 rounded-2xl space-y-2.5 animate-rise">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
                 <Filter className="w-3.5 h-3.5 text-cyan-300" />
-                <span>فیلتر داده‌ها:</span>
+                <span>فیلتر:</span>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <div>
@@ -492,7 +491,7 @@ export default function PopupPage() {
                     onChange={(e) => setGenderFilter(e.target.value)}
                     className="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
                   >
-                    <option value="ALL">همه موارد</option>
+                    <option value="ALL">همه</option>
                     <option value="مرد">مرد</option>
                     <option value="زن">زن</option>
                     <option value="مختلط">مختلط</option>
@@ -502,7 +501,7 @@ export default function PopupPage() {
                   <label className="text-[10px] text-slate-400 block mb-1">استاد</label>
                   <input
                     type="text"
-                    placeholder="جستجوی نام استاد..."
+                    placeholder="نام استاد..."
                     value={instructorFilter}
                     onChange={(e) => setInstructorFilter(e.target.value)}
                     list="instructors-list"
@@ -515,10 +514,10 @@ export default function PopupPage() {
                   </datalist>
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">نام درس</label>
+                  <label className="text-[10px] text-slate-400 block mb-1">درس</label>
                   <input
                     type="text"
-                    placeholder="فیلتر نام درس..."
+                    placeholder="نام درس..."
                     value={courseNameFilter}
                     onChange={(e) => setCourseNameFilter(e.target.value)}
                     className="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
@@ -531,7 +530,7 @@ export default function PopupPage() {
             <section className="glass-panel p-3 rounded-2xl space-y-2 animate-rise">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
                 <Layers className="w-3.5 h-3.5 text-teal-300" />
-                <span>گروه‌بندی خروجی PDF (قابل ترکیب):</span>
+                <span>گروه‌بندی PDF:</span>
               </div>
               <div className="flex gap-1.5">
                 {GROUP_OPTIONS.map((g) => {
@@ -562,63 +561,45 @@ export default function PopupPage() {
                   );
                 })}
               </div>
-              <p className="text-[10px] text-slate-500 leading-4">
-                ابتدا نمای کلی و جدول کامل چاپ می‌شود، سپس برای هر ترکیب (مثلا مرد | نام استاد) یک
-                بخش جدا ساخته می‌شود.
-              </p>
             </section>
 
-            {/* Action bar */}
+            {/* Action bar — only after scraping */}
+            {courses.length > 0 && (
             <div className="flex items-center justify-between animate-rise">
               <div className="text-xs text-slate-400">
-                ردیف‌های منطبق: <span className="text-cyan-300 font-bold">{filteredCourses.length}</span>
+                ردیف‌ها: <span className="text-cyan-300 font-bold">{filteredCourses.length}</span>
               </div>
               <button
                 onClick={handleExportPDF}
-                disabled={filteredCourses.length === 0 || selectedFields.length === 0}
+                disabled={filteredCourses.length === 0 || selectedFields.length === 0 || pdfLoading}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white transition-all shadow-lg shadow-emerald-600/25 disabled:opacity-40 disabled:pointer-events-none"
               >
-                <Download className="w-3.5 h-3.5" />
-                دریافت خروجی PDF
+                {pdfLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                {pdfLoading ? 'در حال ساخت PDF...' : 'دانلود PDF'}
               </button>
             </div>
+            )}
           </>
         ) : (
-          <div className="glass-panel p-4 rounded-2xl text-center space-y-2 opacity-70">
-            <p className="text-xs text-slate-400">منو فقط وقتی صفحه گلستان شناسایی شود فعال می‌شود.</p>
-          </div>
+          !gateChecking && (
+            <div className="glass-panel p-4 rounded-2xl text-center opacity-60">
+              <p className="text-xs text-slate-500">منو فقط وقتی صفحه گلستان شناسایی شود فعال می‌شود.</p>
+            </div>
+          )
         )}
 
         {/* Footer */}
         <footer className="glass-panel p-2.5 rounded-xl flex items-center justify-between text-[11px] text-slate-400 animate-rise">
           <span>توسعه‌دهنده: رضا محمدنیا</span>
           <div className="flex items-center gap-3">
-            <a
-              href="https://t.me/ItsReZNuM"
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-sky-300 transition-colors flex items-center gap-1"
-            >
-              <TelegramIcon />
-              <span>ItsReZNuM</span>
+            <a href="https://t.me/ItsReZNuM" target="_blank" rel="noreferrer" className="hover:text-sky-300 transition-colors flex items-center gap-1">
+              <TelegramIcon /><span>ItsReZNuM</span>
             </a>
-            <a
-              href="https://instagram.com/ReZ.NuM"
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-pink-300 transition-colors flex items-center gap-1"
-            >
-              <InstagramIcon />
-              <span>ReZ.NuM</span>
+            <a href="https://instagram.com/ReZ.NuM" target="_blank" rel="noreferrer" className="hover:text-pink-300 transition-colors flex items-center gap-1">
+              <InstagramIcon /><span>ReZ.NuM</span>
             </a>
-            <a
-              href="https://github.com/ItsReZNuM/GolestanScraperExtension"
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-white transition-colors flex items-center gap-1"
-            >
-              <GithubIcon />
-              <span>GitHub</span>
+            <a href="https://github.com/ItsReZNuM/GolestanScraperExtension" target="_blank" rel="noreferrer" className="hover:text-white transition-colors flex items-center gap-1">
+              <GithubIcon /><span>GitHub</span>
             </a>
           </div>
         </footer>
