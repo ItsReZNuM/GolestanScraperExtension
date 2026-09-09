@@ -91,8 +91,7 @@ export default function App() {
   const [instructorFilter, setInstructorFilter] = useState('');
   const [courseNameFilter, setCourseNameFilter] = useState('');
 
-  const [groupKeys, setGroupKeys] = useState<GroupKey[]>(['instructor']);
-
+  const [groupKeys, setGroupKeys] = useState<GroupKey[]>([]);
   const getExt = useCallback(() => {
     if (typeof chrome === 'undefined' || !chrome.tabs) return null;
     return chrome as typeof chrome;
@@ -455,18 +454,16 @@ export default function App() {
                       type="button"
                       onClick={() => toggleField(field.key)}
                       aria-pressed={checked}
-                      className={`flex items-center gap-1.5 p-1.5 rounded-lg border text-[11px] cursor-pointer transition-all text-right ${
-                        checked
+                      className={`flex items-center gap-1.5 p-1.5 rounded-lg border text-[11px] cursor-pointer transition-all text-right ${checked
                           ? 'bg-indigo-950/50 border-indigo-500/50 text-indigo-100'
                           : 'bg-slate-900/40 border-slate-800 text-slate-500 hover:border-slate-600'
-                      }`}
+                        }`}
                     >
                       <span
-                        className={`w-3.5 h-3.5 rounded flex items-center justify-center border text-[9px] shrink-0 ${
-                          checked
+                        className={`w-3.5 h-3.5 rounded flex items-center justify-center border text-[9px] shrink-0 ${checked
                             ? 'bg-indigo-600 border-indigo-400 text-white'
                             : 'border-slate-700 bg-slate-800'
-                        }`}
+                          }`}
                       >
                         {checked && '✓'}
                       </span>
@@ -541,18 +538,16 @@ export default function App() {
                       type="button"
                       onClick={() => toggleGroup(g.key)}
                       aria-pressed={checked}
-                      className={`flex-1 flex items-center justify-center gap-1.5 p-1.5 rounded-lg border text-[11px] cursor-pointer transition-all ${
-                        checked
+                      className={`flex-1 flex items-center justify-center gap-1.5 p-1.5 rounded-lg border text-[11px] cursor-pointer transition-all ${checked
                           ? 'bg-teal-950/50 border-teal-500/50 text-teal-100'
                           : 'bg-slate-900/40 border-slate-800 text-slate-500 hover:border-slate-600'
-                      }`}
+                        }`}
                     >
                       <span
-                        className={`w-3.5 h-3.5 rounded flex items-center justify-center border text-[9px] ${
-                          checked
+                        className={`w-3.5 h-3.5 rounded flex items-center justify-center border text-[9px] ${checked
                             ? 'bg-teal-600 border-teal-400 text-white'
                             : 'border-slate-700 bg-slate-800'
-                        }`}
+                          }`}
                       >
                         {checked && '✓'}
                       </span>
@@ -565,19 +560,19 @@ export default function App() {
 
             {/* Action bar — only after scraping */}
             {courses.length > 0 && (
-            <div className="flex items-center justify-between animate-rise">
-              <div className="text-xs text-slate-400">
-                ردیف‌ها: <span className="text-cyan-300 font-bold">{filteredCourses.length}</span>
+              <div className="flex items-center justify-between animate-rise">
+                <div className="text-xs text-slate-400">
+                  ردیف‌ها: <span className="text-cyan-300 font-bold">{filteredCourses.length}</span>
+                </div>
+                <button
+                  onClick={handleExportPDF}
+                  disabled={filteredCourses.length === 0 || selectedFields.length === 0 || pdfLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white transition-all shadow-lg shadow-emerald-600/25 disabled:opacity-40 disabled:pointer-events-none"
+                >
+                  {pdfLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                  {pdfLoading ? 'در حال ساخت PDF...' : 'دانلود PDF'}
+                </button>
               </div>
-              <button
-                onClick={handleExportPDF}
-                disabled={filteredCourses.length === 0 || selectedFields.length === 0 || pdfLoading}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white transition-all shadow-lg shadow-emerald-600/25 disabled:opacity-40 disabled:pointer-events-none"
-              >
-                {pdfLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                {pdfLoading ? 'در حال ساخت PDF...' : 'دانلود PDF'}
-              </button>
-            </div>
             )}
           </>
         ) : (

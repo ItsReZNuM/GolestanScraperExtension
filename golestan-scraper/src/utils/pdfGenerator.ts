@@ -10,6 +10,18 @@ function esc(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
+// نرمال‌سازی و فاصله‌گذاری بین پرانتزها و اعداد چسبیده به متن برای جلوگیری از شکستن حروف وسط کلمه
+function normalizePersianText(val: string): string {
+  if (!val) return '';
+  return val
+    .replace(/([\u0600-\u06FF\da-zA-Z])([(\[{])/g, '$1 $2')
+    .replace(/([)\]}])([\u0600-\u06FF\da-zA-Z])/g, '$1 $2')
+    .replace(/([\u0600-\u06FF])(\d+)/g, '$1 $2')
+    .replace(/(\d+)([\u0600-\u06FF])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function groupLabel(key: GroupKey): string {
   if (key === 'gender') return 'جنسیت';
   if (key === 'instructor') return 'استاد';
@@ -21,7 +33,7 @@ function groupTitle(course: CourseData, keys: GroupKey[]): string {
   return keys.map((k) => course[k] || 'نامشخص').join(' | ');
 }
 
-// وزن‌دهی درصدی ستون‌ها جهت چیدمان یکپارچه داخل عرض A4
+// وزن‌دهی درصدی ستون‌ها
 const FIELD_WEIGHTS: Record<string, number> = {
   codeGroup: 4.8,
   name: 8.5,
@@ -43,14 +55,14 @@ const FIELD_WEIGHTS: Record<string, number> = {
 };
 
 function formatCell(key: string, val: string, isDense: boolean): string {
-  const clean = esc(val || '-');
+  const rawClean = esc(val || '-');
   if (key === 'gender') {
     if (val.includes('مرد')) return `<span class="badge badge-male"><span class="ct">مرد</span></span>`;
     if (val.includes('زن')) return `<span class="badge badge-female"><span class="ct">زن</span></span>`;
     if (val.includes('مختلط')) return `<span class="badge badge-mixed"><span class="ct">مختلط</span></span>`;
   }
   if (key === 'codeGroup' && val && val !== '-') {
-    return `<span class="badge-code" dir="ltr"><span class="ct">${clean}</span></span>`;
+    return `<span class="badge-code" dir="ltr"><span class="ct">${rawClean}</span></span>`;
   }
   if (
     (key === 'totalUnits' ||
@@ -61,8 +73,11 @@ function formatCell(key: string, val: string, isDense: boolean): string {
     val &&
     val !== '-'
   ) {
-    return `<span class="badge-num" dir="ltr"><span class="ct">${clean}</span></span>`;
+    return `<span class="badge-num" dir="ltr"><span class="ct">${rawClean}</span></span>`;
   }
+
+  // تصحیح فاصله‌های چسبیده مثل کارآموزی(1واحدی) <- کارآموزی (1 واحدی)
+  const clean = esc(normalizePersianText(val || '-'));
 
   const isLongField = [
     'name',
@@ -104,9 +119,14 @@ function getScopedStyles(colCount: number): string {
     box-sizing: border-box !important;
     margin: 0;
     padding: 0;
-    letter-spacing: 0 !important; /* غیرفعال‌سازی تغییر فاصله که باعث شکستن حروف متصل فارسی می‌شود */
-    font-feature-settings: "liga" 1, "calt" 1; /* اطمینان از اتصال صحیح خطوط نستعلیق و نسخ */
+    letter-spacing: 0 !important;
+    font-feature-settings: "liga" 1, "calt" 1;
     text-rendering: optimizeLegibility;
+    /* جلوگیری قطعی از شکستن حروف وسط کلمات فارسی */
+    word-break: keep-all !important;
+    overflow-wrap: normal !important;
+    hyphens: none !important;
+    -webkit-hyphens: none !important;
   }
   
   #pdf-render-sandbox .pdf-page-container {
@@ -129,18 +149,17 @@ function getScopedStyles(colCount: number): string {
     position: relative;
     top: -2.5px;
     vertical-align: middle;
-    line-height: 1.2;
-    word-break: normal;
+    line-height: 1.25;
+    white-space: normal !important;
   }
 
   #pdf-render-sandbox .long-txt {
     font-size: ${longTxtSize};
-    line-height: 1.2;
-    word-break: normal;
-    overflow-wrap: break-word;
+    line-height: 1.25;
+    white-space: normal !important;
   }
 
-  /* بخش هدر صفحه اول */
+  /* Header Section */
   #pdf-render-sandbox .hd {
     display: flex;
     justify-content: space-between;
@@ -168,7 +187,6 @@ function getScopedStyles(colCount: number): string {
     color: #ffffff;
     margin-bottom: 3px;
     line-height: 1.2;
-    word-break: normal;
     white-space: nowrap;
   }
   #pdf-render-sandbox .hd-title .meta {
@@ -190,7 +208,7 @@ function getScopedStyles(colCount: number): string {
     color: #e2e8f0;
   }
 
-  /* هدر فشرده صفحات ۲ به بعد */
+  /* Compact Header */
   #pdf-render-sandbox .compact-hd {
     display: flex;
     justify-content: space-between;
@@ -209,7 +227,7 @@ function getScopedStyles(colCount: number): string {
     color: #38bdf8;
   }
 
-  /* آمار کلی */
+  /* Stats Cards Grid */
   #pdf-render-sandbox .sts {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
@@ -237,7 +255,7 @@ function getScopedStyles(colCount: number): string {
     line-height: 1.2;
   }
 
-  /* جدول */
+  /* Table Styles */
   #pdf-render-sandbox .table-wrapper {
     flex-grow: 1;
     overflow: hidden;
@@ -265,8 +283,6 @@ function getScopedStyles(colCount: number): string {
     vertical-align: middle !important;
     border-bottom: 1px solid rgba(56, 189, 248, 0.25);
     border-left: 1px solid rgba(255, 255, 255, 0.06);
-    word-break: normal;
-    overflow-wrap: break-word;
   }
   #pdf-render-sandbox table.report-tbl th:first-child {
     border-right: none;
@@ -279,8 +295,6 @@ function getScopedStyles(colCount: number): string {
     font-size: ${tdFontSize};
     text-align: center !important;
     vertical-align: middle !important;
-    word-break: normal;
-    overflow-wrap: break-word;
   }
   #pdf-render-sandbox table.report-tbl tr.even-row td {
     background: rgba(255, 255, 255, 0.015);
@@ -289,7 +303,7 @@ function getScopedStyles(colCount: number): string {
     background: transparent;
   }
 
-  /* ردیف گروه‌بندی */
+  /* Group Row Banner */
   #pdf-render-sandbox tr.grp-row td {
     background: rgba(99, 102, 241, 0.16) !important;
     color: #c7d2fe !important;
@@ -300,10 +314,9 @@ function getScopedStyles(colCount: number): string {
     border-top: 1px solid rgba(99, 102, 241, 0.4);
     border-bottom: 1px solid rgba(99, 102, 241, 0.4);
     text-align: center !important;
-    word-break: normal;
   }
 
-  /* نشان‌ها */
+  /* Badges */
   #pdf-render-sandbox .badge {
     display: inline-block;
     vertical-align: middle;
@@ -356,7 +369,7 @@ function getScopedStyles(colCount: number): string {
     white-space: nowrap;
   }
 
-  /* پاورقی */
+  /* Footer */
   #pdf-render-sandbox .ft {
     display: flex;
     justify-content: space-between;
