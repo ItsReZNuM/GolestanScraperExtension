@@ -7,17 +7,20 @@ import {
   GROUP_OPTIONS,
   GroupKey,
 } from './types/course';
-import { generatePrintablePDF } from './utils/pdfGenerator';
 import {
   AlertTriangle,
   CheckSquare,
   Download,
   Filter,
   Layers,
+  Moon,
+  Palette,
   Play,
   RefreshCw,
   SearchCheck,
+  Sun,
 } from 'lucide-react';
+import { generatePrintablePDF, PdfTheme } from './utils/pdfGenerator';
 
 // Chrome extension API — only available inside extension popup.
 declare const chrome: {
@@ -76,6 +79,7 @@ function GithubIcon() {
 }
 
 export default function App() {
+  const [pdfTheme, setPdfTheme] = useState<PdfTheme>('dark');
   const [courses, setCourses] = useState<CourseData[]>([]);
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
@@ -338,7 +342,7 @@ export default function App() {
       const fieldsToExport = AVAILABLE_FIELDS.filter((f: FieldOption) =>
         selectedFields.includes(f.key)
       );
-      await generatePrintablePDF(filteredCourses, fieldsToExport, groupKeys);
+      await generatePrintablePDF(filteredCourses, fieldsToExport, groupKeys, pdfTheme);
     } catch (_e) {
       void _e;
     }
@@ -455,14 +459,14 @@ export default function App() {
                       onClick={() => toggleField(field.key)}
                       aria-pressed={checked}
                       className={`flex items-center gap-1.5 p-1.5 rounded-lg border text-[11px] cursor-pointer transition-all text-right ${checked
-                          ? 'bg-indigo-950/50 border-indigo-500/50 text-indigo-100'
-                          : 'bg-slate-900/40 border-slate-800 text-slate-500 hover:border-slate-600'
+                        ? 'bg-indigo-950/50 border-indigo-500/50 text-indigo-100'
+                        : 'bg-slate-900/40 border-slate-800 text-slate-500 hover:border-slate-600'
                         }`}
                     >
                       <span
                         className={`w-3.5 h-3.5 rounded flex items-center justify-center border text-[9px] shrink-0 ${checked
-                            ? 'bg-indigo-600 border-indigo-400 text-white'
-                            : 'border-slate-700 bg-slate-800'
+                          ? 'bg-indigo-600 border-indigo-400 text-white'
+                          : 'border-slate-700 bg-slate-800'
                           }`}
                       >
                         {checked && '✓'}
@@ -539,14 +543,14 @@ export default function App() {
                       onClick={() => toggleGroup(g.key)}
                       aria-pressed={checked}
                       className={`flex-1 flex items-center justify-center gap-1.5 p-1.5 rounded-lg border text-[11px] cursor-pointer transition-all ${checked
-                          ? 'bg-teal-950/50 border-teal-500/50 text-teal-100'
-                          : 'bg-slate-900/40 border-slate-800 text-slate-500 hover:border-slate-600'
+                        ? 'bg-teal-950/50 border-teal-500/50 text-teal-100'
+                        : 'bg-slate-900/40 border-slate-800 text-slate-500 hover:border-slate-600'
                         }`}
                     >
                       <span
                         className={`w-3.5 h-3.5 rounded flex items-center justify-center border text-[9px] ${checked
-                            ? 'bg-teal-600 border-teal-400 text-white'
-                            : 'border-slate-700 bg-slate-800'
+                          ? 'bg-teal-600 border-teal-400 text-white'
+                          : 'border-slate-700 bg-slate-800'
                           }`}
                       >
                         {checked && '✓'}
@@ -555,6 +559,40 @@ export default function App() {
                     </button>
                   );
                 })}
+              </div>
+            </section>
+
+            {/* PDF Theme Picker */}
+            <section className="glass-panel p-3 rounded-2xl space-y-2 animate-rise">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
+                <Palette className="w-3.5 h-3.5 text-cyan-300" />
+                <span>قالب رنگی PDF:</span>
+              </div>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setPdfTheme('dark')}
+                  aria-pressed={pdfTheme === 'dark'}
+                  className={`flex-1 flex items-center justify-center gap-1.5 p-1.5 rounded-lg border text-[11px] cursor-pointer transition-all ${pdfTheme === 'dark'
+                      ? 'bg-indigo-950/60 border-indigo-500/60 text-indigo-100 font-semibold'
+                      : 'bg-slate-900/40 border-slate-800 text-slate-500 hover:border-slate-600'
+                    }`}
+                >
+                  <Moon className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>دارک (تیره)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPdfTheme('light')}
+                  aria-pressed={pdfTheme === 'light'}
+                  className={`flex-1 flex items-center justify-center gap-1.5 p-1.5 rounded-lg border text-[11px] cursor-pointer transition-all ${pdfTheme === 'light'
+                      ? 'bg-amber-950/40 border-amber-500/60 text-amber-100 font-semibold'
+                      : 'bg-slate-900/40 border-slate-800 text-slate-500 hover:border-slate-600'
+                    }`}
+                >
+                  <Sun className="w-3.5 h-3.5 text-amber-400" />
+                  <span>لایت (روشن)</span>
+                </button>
               </div>
             </section>
 

@@ -2,6 +2,8 @@ import { CourseData, FieldOption, GroupKey } from '../types/course';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
+export type PdfTheme = 'dark' | 'light';
+
 function esc(value: string): string {
   return (value ?? '')
     .replace(/&/g, '&amp;')
@@ -10,7 +12,6 @@ function esc(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-// نرمال‌سازی و فاصله‌گذاری بین پرانتزها و اعداد چسبیده به متن برای جلوگیری از شکستن حروف وسط کلمه
 function normalizePersianText(val: string): string {
   if (!val) return '';
   return val
@@ -33,7 +34,6 @@ function groupTitle(course: CourseData, keys: GroupKey[]): string {
   return keys.map((k) => course[k] || 'نامشخص').join(' | ');
 }
 
-// وزن‌دهی درصدی ستون‌ها
 const FIELD_WEIGHTS: Record<string, number> = {
   codeGroup: 4.8,
   name: 8.5,
@@ -76,7 +76,6 @@ function formatCell(key: string, val: string, isDense: boolean): string {
     return `<span class="badge-num" dir="ltr"><span class="ct">${rawClean}</span></span>`;
   }
 
-  // تصحیح فاصله‌های چسبیده مثل کارآموزی(1واحدی) <- کارآموزی (1 واحدی)
   const clean = esc(normalizePersianText(val || '-'));
 
   const isLongField = [
@@ -103,7 +102,7 @@ interface PageItem {
   index?: number;
 }
 
-function getScopedStyles(colCount: number): string {
+function getScopedStyles(colCount: number, theme: PdfTheme): string {
   const isUltraDense = colCount >= 14;
   const isDense = colCount >= 9;
 
@@ -112,6 +111,8 @@ function getScopedStyles(colCount: number): string {
   const longTxtSize = isUltraDense ? '6px' : '6.8px';
   const badgeFontSize = isUltraDense ? '6.2px' : '7.2px';
   const cellPaddingY = isUltraDense ? '2px' : '4px';
+
+  const isDark = theme === 'dark';
 
   return `
   #pdf-render-sandbox,
@@ -122,7 +123,6 @@ function getScopedStyles(colCount: number): string {
     letter-spacing: 0 !important;
     font-feature-settings: "liga" 1, "calt" 1;
     text-rendering: optimizeLegibility;
-    /* جلوگیری قطعی از شکستن حروف وسط کلمات فارسی */
     word-break: keep-all !important;
     overflow-wrap: normal !important;
     hyphens: none !important;
@@ -133,8 +133,8 @@ function getScopedStyles(colCount: number): string {
     width: 1122px;
     height: 794px;
     padding: 20px 24px;
-    background: #090d16;
-    color: #f1f5f9;
+    background: ${isDark ? '#090d16' : '#ffffff'};
+    color: ${isDark ? '#f1f5f9' : '#0f172a'};
     font-family: 'Vazirmatn', Tahoma, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
     direction: rtl;
     display: flex;
@@ -159,14 +159,13 @@ function getScopedStyles(colCount: number): string {
     white-space: normal !important;
   }
 
-  /* Header Section */
   #pdf-render-sandbox .hd {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 7px 14px 9px 14px;
-    background: #0f172a;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: ${isDark ? '#0f172a' : '#f8fafc'};
+    border: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0'};
     border-radius: 8px;
     margin-bottom: 8px;
     position: relative;
@@ -184,50 +183,48 @@ function getScopedStyles(colCount: number): string {
   #pdf-render-sandbox .hd-title h1 {
     font-size: 14px;
     font-weight: 800;
-    color: #ffffff;
+    color: ${isDark ? '#ffffff' : '#0f172a'};
     margin-bottom: 3px;
     line-height: 1.2;
     white-space: nowrap;
   }
   #pdf-render-sandbox .hd-title .meta {
     font-size: 8.5px;
-    color: #94a3b8;
+    color: ${isDark ? '#94a3b8' : '#64748b'};
     line-height: 1.2;
   }
   #pdf-render-sandbox .hd-title .meta b {
-    color: #38bdf8;
+    color: ${isDark ? '#38bdf8' : '#2563eb'};
   }
   #pdf-render-sandbox .hd-date {
     text-align: left;
     font-size: 8px;
-    color: #94a3b8;
+    color: ${isDark ? '#94a3b8' : '#64748b'};
     line-height: 1.4;
     white-space: nowrap;
   }
   #pdf-render-sandbox .hd-date b {
-    color: #e2e8f0;
+    color: ${isDark ? '#e2e8f0' : '#1e293b'};
   }
 
-  /* Compact Header */
   #pdf-render-sandbox .compact-hd {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 5px 12px 7px 12px;
-    background: #0f172a;
-    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: ${isDark ? '#0f172a' : '#f8fafc'};
+    border: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.07)' : '#e2e8f0'};
     border-radius: 6px;
     margin-bottom: 8px;
     font-size: 9px;
-    color: #94a3b8;
+    color: ${isDark ? '#94a3b8' : '#64748b'};
     line-height: 1.2;
     white-space: nowrap;
   }
   #pdf-render-sandbox .compact-hd b {
-    color: #38bdf8;
+    color: ${isDark ? '#38bdf8' : '#2563eb'};
   }
 
-  /* Stats Cards Grid */
   #pdf-render-sandbox .sts {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
@@ -235,8 +232,8 @@ function getScopedStyles(colCount: number): string {
     margin-bottom: 8px;
   }
   #pdf-render-sandbox .st {
-    background: #111827;
-    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: ${isDark ? '#111827' : '#f8fafc'};
+    border: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.07)' : '#e2e8f0'};
     border-radius: 6px;
     padding: 4px 6px 6px 6px;
     text-align: center;
@@ -245,17 +242,16 @@ function getScopedStyles(colCount: number): string {
     display: block;
     font-size: 14px;
     font-weight: 800;
-    color: #38bdf8;
+    color: ${isDark ? '#38bdf8' : '#2563eb'};
     line-height: 1.1;
     margin-bottom: 2px;
   }
   #pdf-render-sandbox .st .l {
     font-size: 7.5px;
-    color: #94a3b8;
+    color: ${isDark ? '#94a3b8' : '#64748b'};
     line-height: 1.2;
   }
 
-  /* Table Styles */
   #pdf-render-sandbox .table-wrapper {
     flex-grow: 1;
     overflow: hidden;
@@ -267,56 +263,54 @@ function getScopedStyles(colCount: number): string {
     table-layout: fixed;
     border-collapse: separate;
     border-spacing: 0;
-    background: #0c121e;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: ${isDark ? '#0c121e' : '#ffffff'};
+    border: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : '#cbd5e1'};
     border-radius: 6px;
     overflow: hidden;
   }
   #pdf-render-sandbox table.report-tbl th {
-    background: #172033;
-    color: #bae6fd;
+    background: ${isDark ? '#172033' : '#1e293b'};
+    color: ${isDark ? '#bae6fd' : '#f8fafc'};
     font-weight: 700;
     font-size: ${thFontSize};
     padding: 4px 2px 5px 2px;
     line-height: 1.2;
     text-align: center !important;
     vertical-align: middle !important;
-    border-bottom: 1px solid rgba(56, 189, 248, 0.25);
-    border-left: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom: 1px solid ${isDark ? 'rgba(56, 189, 248, 0.25)' : '#334155'};
+    border-left: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.06)' : '#334155'};
   }
   #pdf-render-sandbox table.report-tbl th:first-child {
     border-right: none;
   }
   #pdf-render-sandbox table.report-tbl td {
     padding: ${cellPaddingY} 2px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    border-left: 1px solid rgba(255, 255, 255, 0.04);
-    color: #e2e8f0;
+    border-bottom: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.04)' : '#e2e8f0'};
+    border-left: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.04)' : '#e2e8f0'};
+    color: ${isDark ? '#e2e8f0' : '#334155'};
     font-size: ${tdFontSize};
     text-align: center !important;
     vertical-align: middle !important;
   }
   #pdf-render-sandbox table.report-tbl tr.even-row td {
-    background: rgba(255, 255, 255, 0.015);
+    background: ${isDark ? 'rgba(255, 255, 255, 0.015)' : '#f8fafc'};
   }
   #pdf-render-sandbox table.report-tbl tr.odd-row td {
     background: transparent;
   }
 
-  /* Group Row Banner */
   #pdf-render-sandbox tr.grp-row td {
-    background: rgba(99, 102, 241, 0.16) !important;
-    color: #c7d2fe !important;
+    background: ${isDark ? 'rgba(99, 102, 241, 0.16)' : '#eef2ff'} !important;
+    color: ${isDark ? '#c7d2fe' : '#3730a3'} !important;
     font-weight: 700;
     font-size: 8.5px;
     padding: 4px 8px 5px 8px !important;
     line-height: 1.2;
-    border-top: 1px solid rgba(99, 102, 241, 0.4);
-    border-bottom: 1px solid rgba(99, 102, 241, 0.4);
+    border-top: 1px solid ${isDark ? 'rgba(99, 102, 241, 0.4)' : '#818cf8'};
+    border-bottom: 1px solid ${isDark ? 'rgba(99, 102, 241, 0.4)' : '#818cf8'};
     text-align: center !important;
   }
 
-  /* Badges */
   #pdf-render-sandbox .badge {
     display: inline-block;
     vertical-align: middle;
@@ -328,19 +322,19 @@ function getScopedStyles(colCount: number): string {
     white-space: nowrap;
   }
   #pdf-render-sandbox .badge-male {
-    background: rgba(37, 99, 235, 0.22);
-    color: #93c5fd;
-    border: 1px solid rgba(59, 130, 246, 0.4);
+    background: ${isDark ? 'rgba(37, 99, 235, 0.22)' : '#eff6ff'};
+    color: ${isDark ? '#93c5fd' : '#1d4ed8'};
+    border: 1px solid ${isDark ? 'rgba(59, 130, 246, 0.4)' : '#bfdbfe'};
   }
   #pdf-render-sandbox .badge-female {
-    background: rgba(219, 39, 119, 0.22);
-    color: #f472b6;
-    border: 1px solid rgba(236, 72, 153, 0.4);
+    background: ${isDark ? 'rgba(219, 39, 119, 0.22)' : '#fdf2f8'};
+    color: ${isDark ? '#f472b6' : '#be185d'};
+    border: 1px solid ${isDark ? 'rgba(236, 72, 153, 0.4)' : '#fbcfe8'};
   }
   #pdf-render-sandbox .badge-mixed {
-    background: rgba(147, 51, 234, 0.22);
-    color: #d8b4fe;
-    border: 1px solid rgba(168, 85, 247, 0.4);
+    background: ${isDark ? 'rgba(147, 51, 234, 0.22)' : '#faf5ff'};
+    color: ${isDark ? '#d8b4fe' : '#7e22ce'};
+    border: 1px solid ${isDark ? 'rgba(168, 85, 247, 0.4)' : '#e9d5ff'};
   }
   #pdf-render-sandbox .badge-code {
     display: inline-block;
@@ -348,11 +342,11 @@ function getScopedStyles(colCount: number): string {
     line-height: 1;
     padding: 1px 4px 2px 4px;
     border-radius: 3px;
-    background: rgba(15, 23, 42, 0.8);
-    color: #a5b4fc;
+    background: ${isDark ? 'rgba(15, 23, 42, 0.8)' : '#f1f5f9'};
+    color: ${isDark ? '#a5b4fc' : '#312e81'};
     font-weight: 700;
     font-size: ${badgeFontSize};
-    border: 1px solid rgba(99, 102, 241, 0.3);
+    border: 1px solid ${isDark ? 'rgba(99, 102, 241, 0.3)' : '#cbd5e1'};
     white-space: nowrap;
   }
   #pdf-render-sandbox .badge-num {
@@ -361,28 +355,27 @@ function getScopedStyles(colCount: number): string {
     line-height: 1;
     padding: 1px 4px 2px 4px;
     border-radius: 3px;
-    background: rgba(56, 189, 248, 0.12);
-    color: #38bdf8;
+    background: ${isDark ? 'rgba(56, 189, 248, 0.12)' : '#f0fdfa'};
+    color: ${isDark ? '#38bdf8' : '#0f766e'};
     font-weight: 700;
     font-size: ${badgeFontSize};
-    border: 1px solid rgba(56, 189, 248, 0.3);
+    border: 1px solid ${isDark ? 'rgba(56, 189, 248, 0.3)' : '#99f6e4'};
     white-space: nowrap;
   }
 
-  /* Footer */
   #pdf-render-sandbox .ft {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding-top: 6px;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0'};
     font-size: 7.5px;
     color: #64748b;
     line-height: 1.2;
     white-space: nowrap;
   }
   #pdf-render-sandbox .ft b {
-    color: #94a3b8;
+    color: ${isDark ? '#94a3b8' : '#1e293b'};
   }
   `;
 }
@@ -390,7 +383,8 @@ function getScopedStyles(colCount: number): string {
 export async function generatePrintablePDF(
   courses: CourseData[],
   selectedFields: FieldOption[],
-  groupKeys: GroupKey[]
+  groupKeys: GroupKey[],
+  theme: PdfTheme = 'dark'
 ): Promise<void> {
   if (!courses || courses.length === 0) return;
 
@@ -494,7 +488,7 @@ export async function generatePrintablePDF(
     'position:fixed;top:0;left:-99999px;width:1122px;opacity:0;pointer-events:none;z-index:-999999;';
 
   const styleEl = document.createElement('style');
-  styleEl.innerHTML = getScopedStyles(colCount);
+  styleEl.innerHTML = getScopedStyles(colCount, theme);
   wrapper.appendChild(styleEl);
 
   const theadHtml = `
@@ -563,7 +557,7 @@ export async function generatePrintablePDF(
         const rowClass = rIdx % 2 === 0 ? 'even-row' : 'odd-row';
         return `
           <tr class="${rowClass}">
-            <td style="text-align:center;font-weight:bold;color:#64748b;"><span class="ct">${it.index}</span></td>
+            <td style="text-align:center;font-weight:bold;color:${theme === 'dark' ? '#64748b' : '#94a3b8'};"><span class="ct">${it.index}</span></td>
             ${fields
             .map(
               (f) =>
@@ -624,7 +618,7 @@ export async function generatePrintablePDF(
       const canvas = await html2canvas(pageEl, {
         scale: 2,
         useCORS: true,
-        backgroundColor: '#090d16',
+        backgroundColor: theme === 'dark' ? '#090d16' : '#ffffff',
         width: 1122,
         height: 794,
         windowWidth: 1122,
@@ -641,7 +635,7 @@ export async function generatePrintablePDF(
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
     }
 
-    pdf.save('golestan-courses.pdf');
+    pdf.save(`golestan-courses-${theme}.pdf`);
   } finally {
     document.body.removeChild(wrapper);
   }
